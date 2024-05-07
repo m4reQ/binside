@@ -1,0 +1,5 @@
+numpy
+pixiv-api
+Pillow
+beautifulsoup4
+tkinterdnd2
