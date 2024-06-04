@@ -30,6 +30,7 @@ class ResultPage(QtWidgets.QWidget):
             self.file_logo.width())
 
         self.filepath_label.setText(filepath_text)
+        self.filepath_label.setToolTip(result.filepath)
         self.file_size_label.setText(f'{(result.file_size / 1024):.2f}kB')
         self.analysis_time_label.setText(f'{result.analysis_time:.4f}s')
 
