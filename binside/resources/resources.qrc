@@ -1,0 +1,17 @@
+<RCC>
+  <qresource prefix="icons">
+    <file>images/file_icon.png</file>
+    <file>images/binside_logo.png</file>
+    <file>images/add_file_icon.png</file>
+    <file>images/github_logo.png</file>
+    <file>images/loading_icon.gif</file>
+  </qresource>
+  <qresource prefix="uis">
+    <file>ui/loading_page.ui</file>
+    <file>ui/result_page.ui</file>
+    <file>ui/error_page.ui</file>
+    <file>ui/main_window.ui</file>
+    <file>ui/processing_page.ui</file>
+    <file>ui/title_page.ui</file>
+  </qresource>
+</RCC>

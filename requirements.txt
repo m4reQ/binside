@@ -1,5 +1,15 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 numpy
-pixiv-api
 Pillow
 beautifulsoup4
 tkinterdnd2
+pydub
+torch
+torchvision
+pyyaml
+PyQt6
+
+# official dependency_injector doesn't support Python 3.12
+dependency-injector @ git+https://github.com/anton-petrov/python-dependency-injector

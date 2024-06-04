@@ -1,67 +1,138 @@
-import logging
-import threading
-import time
-import tkinter as tk
+import webbrowser
 
-import tkinterdnd2
+from PyQt6 import QtCore, QtWidgets
 
-from binside import utils
-from binside.pages import ProcessingPage, StartPage
+from binside import resources, utils
+from binside.pages.error_page import ErrorPage
+from binside.pages.loading_page import LoadingPage
+from binside.pages.processing_page import ProcessingPage
+from binside.pages.result_page import ResultPage
+from binside.pages.title_page import TitlePage
+from binside.processing import ProcessingJob, ProcessingResult
+from binside_common import ai
 
 DEFAULT_WIDTH = 1080
 DEFAULT_HEIGHT = 720
+MODEL_FILEPATH = './tests/modelv2_epoch3_9728.pt'
+GITHUB_URL = 'https://github.com/m4reQ/binside'
 
-FONT_FAMILY = 'Cascadia Mono'
+class LoadingJob(QtCore.QRunnable):
+    class Signals(QtCore.QObject):
+        finished = QtCore.pyqtSignal()
 
-class App(tkinterdnd2.Tk):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.model: ai.Model | None = None
+        self.signals = LoadingJob.Signals()
+
+    def run(self) -> None:
+        self.model = ai.load_model(MODEL_FILEPATH)
+        self.finished.emit()
+
+    @property
+    def finished(self) -> QtCore.pyqtBoundSignal:
+        return self.signals.finished
+
+class BinsideApp(QtWidgets.QMainWindow):
     def __init__(self, width: int, height: int) -> None:
         super().__init__()
 
-        self._current_page: tk.Frame | None = None
-        self._start_page = StartPage(self, FONT_FAMILY)
-        self._processing_page = ProcessingPage(self, FONT_FAMILY)
+        self._loading_page = LoadingPage()
+        self._title_page = TitlePage()
+        self._processing_page = ProcessingPage()
+        self._error_page = ErrorPage()
+        self._result_page = ResultPage()
 
-        self._processing_thread: threading.Thread | None = None
+        self._model: ai.Model | None = None
 
-        self.title('BINSIDE')
-        self.geometry(f'{width}x{height}')
+        self._thread_pool = QtCore.QThreadPool.globalInstance()
+        assert self._thread_pool is not None
 
-        self._change_page(self._start_page)
+        self.page_stack: QtWidgets.QStackedWidget
+        self.github_logo_button: QtWidgets.QPushButton
 
-        utils.bind_with_data(self, '<<ProcessingRequested>>', self._handle_processing_requested)
+        utils.load_ui_from_resource(':/uis/ui/main_window.ui', self)
 
-    def _change_page(self, page: tk.Frame) -> None:
-        if self._current_page is not None:
-            self._current_page.pack_forget()
+        self.setWindowTitle('BINSIDE')
+        self.resize(width, height)
 
-        self._current_page = page
-        self._current_page.pack(fill='both', expand=True, pady=15, padx=15)
+        self._loading_job = LoadingJob()
+        self._loading_job.finished.connect(self._handle_loading_finished)
+        self._thread_pool.start(self._loading_job)
 
-    def _handle_processing_requested(self, e: tk.Event) -> None:
-        filepath: str = e.data['filepath'] # type: ignore
-        assert filepath
+        self._title_page.file_drop_area.files_dropped.connect(self._handle_file_drop)
+        self._title_page.add_file_button.clicked.connect(self._handle_add_files_request)
+        self._error_page.return_button.clicked.connect(self._handle_return_clicked)
+        self._result_page.return_button.clicked.connect(self._handle_return_clicked)
+        self.github_logo_button.clicked.connect(self._handle_github_logo_clicked)
 
+        self.page_stack.addWidget(self._loading_page)
+        self.page_stack.addWidget(self._title_page)
+        self.page_stack.addWidget(self._processing_page)
+        self.page_stack.addWidget(self._error_page)
+        self.page_stack.addWidget(self._result_page)
+
+    @QtCore.pyqtSlot()
+    def _handle_loading_finished(self) -> None:
+        self._model = self._loading_job.model
+
+        self._change_page(self._title_page)
+
+    @QtCore.pyqtSlot()
+    def _handle_return_clicked(self) -> None:
+        self._change_page(self._title_page)
+
+    @QtCore.pyqtSlot()
+    def _handle_github_logo_clicked(self) -> None:
+        webbrowser.open(GITHUB_URL)
+
+    @QtCore.pyqtSlot()
+    def _handle_add_files_request(self) -> None:
+        filepath, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Open File', '.', 'All Files (*)')
+        if len(filepath) == 0:
+            return
+
+        self._process_file(filepath)
+
+    @QtCore.pyqtSlot(str)
+    def _handle_file_drop(self, filepath: str) -> None:
+        self._process_file(filepath)
+
+    @QtCore.pyqtSlot(ProcessingResult)
+    def _handle_processing_successful(self, result: ProcessingResult) -> None:
+        self._result_page.set_result(result)
+        self._change_page(self._result_page)
+
+    @QtCore.pyqtSlot(str)
+    def _handle_processing_failed(self, error_message: str) -> None:
+        self._error_page.set_error_message(error_message)
+        self._change_page(self._error_page)
+
+    @QtCore.pyqtSlot(str)
+    def _handle_processing_progress(self, progress_msg: str) -> None:
+        self._processing_page.set_progress_message(progress_msg)
+
+    def _process_file(self, filepath: str) -> None:
         self._change_page(self._processing_page)
 
-        self._processing_thread = threading.Thread(target=self._process_filepath, args=[filepath])
-        self._processing_thread.start()
+        job = ProcessingJob(filepath, self._model)
+        job.progress.connect(self._handle_processing_progress)
+        job.finished.connect(self._handle_processing_successful)
+        job.failed.connect(self._handle_processing_failed)
 
-    def _set_processing_message(self, message: str) -> None:
-        self.event_generate('<<ProcessingMessageChanged>>', data={'message': message})
+        self._thread_pool.start(job)
 
-    def _process_filepath(self, filepath: str) -> None:
-        self._set_processing_message(f'Reading file {filepath}...')
-        _logger.debug('Reading file %s...', filepath)
+    def _change_page(self, page: QtWidgets.QWidget) -> None:
+        self.page_stack.setCurrentWidget(page)
 
-        # FIXME temporary
-        time.sleep(3)
+def run(argv: list[str]) -> None:
+    resources.qInitResources()
 
-        with open(filepath, 'rb') as f:
-            data = f.read()
+    app = QtWidgets.QApplication(argv)
+    window = BinsideApp(DEFAULT_WIDTH, DEFAULT_HEIGHT)
 
-        self._set_processing_message('Generating memory map...')
+    window.show()
+    app.exec()
 
-def create_app() -> tk.Tk:
-    return App(DEFAULT_WIDTH, DEFAULT_HEIGHT)
-
-_logger = logging.getLogger(__name__)
+    resources.qCleanupResources()

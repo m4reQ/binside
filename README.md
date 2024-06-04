@@ -16,8 +16,8 @@ This respository contains two separate applications:
 
 To run any of those navigate to the repository's main directory and use:
 
-On Windows: `py run <app_name>`
+On Windows: `py run.py <app_name>`
 
-On Linux: `py3 run <app_name>`
+On Linux: `python3 run.py <app_name>`
 
 where `<app_name>` is either `binside` or `binside_trainer`.
